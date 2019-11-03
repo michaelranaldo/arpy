@@ -56,8 +56,20 @@ def determine_subnet_cidr(hosts):
 # have a prompt to "prod" addresses (loud mode) or just stay in 
 # caterpillar drive mode
 
-sniff(prn=arp_monitor_callback, filter="arp", store=0)
+#sniff(prn=arp_monitor_callback, filter="arp", store=0)
+sniffo = AsyncSniffer(prn=arp_monitor_callback, filter="arp", store=0)
+try :
+    sniffo.start()
+    time.sleep(30)
+    sniffo.stop()
+except KeyboardInterrupt:
+    print()
+    print("Well fuck you too buddy")
+    sniffo.stop()
 print()
+if len(found_hosts) == 0:
+    print("We ain't found shit")
+    exit()
 
 #sort ip addresses
 #get highest and lowest
