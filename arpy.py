@@ -16,7 +16,7 @@ def arp_monitor_callback(packet):
                 print("Ignoring previously discovered host")
 
 def determine_subnet_cidr(hosts):
-    subnet_range = hosts[len(hosts) - 1] - hosts[0] + 1
+    subnet_range = hosts[len(hosts) - 1] - hosts[0]
     print("Subnet range is %s " % subnet_range)
     print("Determining subnets...")
     print("The captured ip addresses range from %s to %s" % (ipaddress.IPv4Address(hosts[0]), ipaddress.IPv4Address(hosts[len(hosts) - 1])))
@@ -37,13 +37,6 @@ def determine_subnet_cidr(hosts):
     print("Estimated subnet size: /%s" % cidr)
     return cidr
 
-
-# determine which potential subnets IP address could be in
-## this will likely tie in with the below
-## i.e. if only 255 addresses have been found, perhaps this is on balance
-## a /24, therefore suggest quiet sports within the /24
-
-
 # determine which IP addresses have been discovered so far
 
 # determine strings of consecutive IP addresses, with a set maximum gap
@@ -56,7 +49,11 @@ def determine_subnet_cidr(hosts):
 # have a prompt to "prod" addresses (loud mode) or just stay in 
 # caterpillar drive mode
 
-#sniff(prn=arp_monitor_callback, filter="arp", store=0)
+# So this previously was blocking as I wanted the constant updates
+# even though i'd seen the non-blocking
+# but the blocking fucks when you CTRL-C or otherwise quit
+# Turns out the docs hadn't updated either, cause you can totally
+# still call prn, so that's what we now do
 sniffo = AsyncSniffer(prn=arp_monitor_callback, filter="arp", store=0)
 try :
     sniffo.start()
@@ -71,23 +68,20 @@ if len(found_hosts) == 0:
     print("We ain't found shit")
     exit()
 
-#sort ip addresses
-#get highest and lowest
-#ip address library allows for addr in subn and addr < addr operations
-
 numeric_hosts=[]
 for host in found_hosts:
     numeric_hosts.append(int(ipaddress.IPv4Address(found_hosts[host])))
 numeric_hosts.sort()
-
-network_address=str(ipaddress.IPv4Address(numeric_hosts[0]))+"/"+str(determine_subnet_cidr(numeric_hosts))
+cidr = determine_subnet_cidr(numeric_hosts)
+network_address = str(ipaddress.IPv4Address(numeric_hosts[0]))+"/"+str(cidr)
 print(network_address)
 network = ipaddress.ip_network(network_address, strict=False)
 print("Network address: %s" % network.network_address)
 print("Broadcast address: %s" % network.broadcast_address)
 if network.is_private:
     print("The network appears to be within a private address range")
-
-#for host in found_hosts:
-#    print("Found %s" % host)
-#    print("with an IP of %s" % found_hosts[host])
+print("The network is %s addresses big" % str(2 ** (32 - cidr)))
+print("Subtracting 2 for the network and broadcast address")
+print("and %s found hosts delivers:" % len(found_hosts))
+empty_addresses = ( 2 ** (32 - cidr) ) - len(found_hosts)
+print("There appear to be %s empty addresses" % empty_addresses)
