@@ -8,12 +8,18 @@ ignore = ['0.0.0.0']
 
 parser = argparse.ArgumentParser(description = "ARP listener")
 parser.add_argument('-v', '--verbose', help='Verbose mode', action='count')
+parser.add_argument('-t', '--time', type=int, help='Time to listen for ARP packets')
 args = parser.parse_args()
 
 if args.verbose != None and int(args.verbose) > 0:
     verbose = True
 else:
     verbose = False
+listen_time = 30
+if args.time != None:
+    listen_time = int(args.time)
+    if verbose:
+        print("Set listen time to %s" % listen_time)
 
 def arp_monitor_callback(packet):
     if ARP in packet and packet[ARP].op in (1,2):
@@ -87,9 +93,13 @@ def get_potential_addresses(found_hosts, network):
 # Turns out the docs hadn't updated either, cause you can totally
 # still call prn, so that's what we now do
 sniffo = AsyncSniffer(prn=arp_monitor_callback, filter="arp", store=0)
-try :
+try:
+    if verbose:
+        print("Starting listener...")
     sniffo.start()
-    time.sleep(30)
+    time.sleep(listen_time)
+    if verbose:
+        print("Stopping listener...")
     sniffo.stop()
 except KeyboardInterrupt:
     print()
