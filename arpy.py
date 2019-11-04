@@ -37,6 +37,21 @@ def determine_subnet_cidr(hosts):
     print("Estimated subnet size: /%s" % cidr)
     return cidr
 
+def get_potential_addresses(found_hosts, network):
+    print("Getting potential addresses")
+    empty_slots = []
+    # Roll through the network and identify the first x empty slots
+    for address in ipaddress.IPv4Network(network):
+        if len(empty_slots) < 10:
+            if int(ipaddress.IPv4Address(address)) not in found_hosts:
+                if str(network.network_address) != str(ipaddress.IPv4Address(address)):
+                    empty_slots.append(address)
+        else:
+            break
+    print("Try:")
+    for address in empty_slots:
+        print("  %s" % address)
+
 # determine which IP addresses have been discovered so far
 
 # determine strings of consecutive IP addresses, with a set maximum gap
@@ -73,12 +88,15 @@ for host in found_hosts:
     numeric_hosts.append(int(ipaddress.IPv4Address(found_hosts[host])))
 numeric_hosts.sort()
 cidr = determine_subnet_cidr(numeric_hosts)
-network_address = str(ipaddress.IPv4Address(numeric_hosts[0]))+"/"+str(cidr)
-print(network_address)
-network = ipaddress.ip_network(network_address, strict=False)
-print("The network is within a %s address range" % ("public" if network.is_private else "private"))
+full_network_address = str(ipaddress.IPv4Address(numeric_hosts[0]))+"/"+str(cidr)
+network = ipaddress.ip_network(full_network_address, strict=False)
+print("The network is within a %s address range" % ("private" if network.is_private else "public"))
 print("Network address: %s" % network.network_address)
 print("Broadcast address: %s" % network.broadcast_address)
-print("The network range is %s address(es)" % str(2 ** (32 - cidr)))
 empty_addresses = ( 2 ** (32 - cidr) ) - len(found_hosts)
-print("There appear to be %s empty addresses" % empty_addresses)
+
+if empty_addresses > 0:
+    print("There appear to be %s empty addresses out of a maximum %s" % (empty_addresses, str(2**(32-cidr))))
+    get_potential_addresses(found_hosts, network)
+else:
+    print("Sorry old boy, no spare addresses available")
