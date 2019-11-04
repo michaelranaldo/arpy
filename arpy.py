@@ -5,10 +5,11 @@ import time, ipaddress
 
 verbose = False
 found_hosts={}
+ignore = ['0.0.0.0']
 
 def arp_monitor_callback(packet):
     if ARP in packet and packet[ARP].op in (1,2):
-        if not (packet.sprintf("%ARP.hwsrc%") in found_hosts):
+        if not (packet.sprintf("%ARP.hwsrc%") in found_hosts) and not (packet.sprintf("%ARP.psrc%") in ignore) and not (packet.sprintf("%ARP.pdst%") in ignore):
             found_hosts[packet.sprintf("%ARP.hwsrc%")] = packet.sprintf("%ARP.psrc%")
             return packet.sprintf("Found New %ARP.hwsrc% %ARP.psrc%")
         else:
@@ -17,9 +18,10 @@ def arp_monitor_callback(packet):
 
 def determine_subnet_cidr(hosts):
     subnet_range = hosts[len(hosts) - 1] - hosts[0]
+    final_host = ipaddress.IPv4Address(hosts[len(hosts) - 1])
     print("Subnet range is %s " % subnet_range)
     print("Determining subnets...")
-    print("The captured ip addresses range from %s to %s" % (ipaddress.IPv4Address(hosts[0]), ipaddress.IPv4Address(hosts[len(hosts) - 1])))
+    print("The captured ip addresses range from %s to %s" % (ipaddress.IPv4Address(hosts[0]), final_host))
     print("Based on a sample of %s captured ip addresses" % len(hosts))
     # powers of 2 til we get to something
     exponent = 0
@@ -27,7 +29,12 @@ def determine_subnet_cidr(hosts):
     cidr = 32
     chk = True
     while chk:
-        if (2 ** exponent) < subnet_range:
+        # if 2^x is less than the range of ip address
+        # and if the maximum proposed range is still 
+        # lower than the highest ip address
+        network = ipaddress.ip_network(str(ipaddress.IPv4Address(numeric_hosts[0]))+"/"+str(cidr), strict=False)
+        print(network.broadcast_address)
+        if (2 ** exponent) < subnet_range or final_host not in network:
             estimated_subnet_size = 2 ** exponent
             exponent = exponent + 1
             cidr = cidr - 1
@@ -91,8 +98,7 @@ cidr = determine_subnet_cidr(numeric_hosts)
 full_network_address = str(ipaddress.IPv4Address(numeric_hosts[0]))+"/"+str(cidr)
 network = ipaddress.ip_network(full_network_address, strict=False)
 print("The network is within a %s address range" % ("private" if network.is_private else "public"))
-print("Network address: %s" % network.network_address)
-print("Broadcast address: %s" % network.broadcast_address)
+print("Network address: %s" % network)
 empty_addresses = ( 2 ** (32 - cidr) ) - len(found_hosts)
 
 if empty_addresses > 0:
