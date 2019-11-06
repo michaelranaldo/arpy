@@ -1,0 +1,18 @@
+fix an apparent error with working out the size of subnets
+michael@prosthetic-conscience ~/S/arpy (master)> sudo ./arpy.py
+Found New f0:9f:c2:73:93:c6 192.168.0.90
+Found New 78:8a:20:d3:f2:68 192.168.0.85
+^C
+Well fuck you too buddy
+
+Subnet range is 6 
+Determining subnets...
+The captured ip addresses range from 192.168.0.85 to 192.168.0.90
+Based on a sample of 2 captured ip addresses
+Estimated subnet size: /29
+192.168.0.85/29
+Network address: 192.168.0.80
+Broadcast address: 192.168.0.87
+The network appears to be within a private address range
+There appear to be 6 empty addresses
+
