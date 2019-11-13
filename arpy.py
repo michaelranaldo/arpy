@@ -1,7 +1,11 @@
 #!/usr/bin/python3
-
+import time, ipaddress, argparse, os, sys
 from scapy.all import *
-import time, ipaddress, argparse
+from lib import logger
+
+'''
+might be worth adding switches for interfaces/verbosity/no colour etc?
+'''
 
 found_hosts={}
 ignore = ['0.0.0.0']
@@ -21,24 +25,38 @@ if args.time != None:
     if verbose:
         print("Set listen time to %s" % listen_time)
 
+def stats_banner():
+    delimeter = ' ' * 10
+    msg = '|%sStatistics%s|' % (delimeter,delimeter)
+    corner = logger.red_fg('+')
+    bar = '-' * (len(msg) - 2)
+    print(corner+bar+ corner)
+    print(logger.red_fg(msg))
+    print(corner+bar+ corner)
+
 def arp_monitor_callback(packet):
     if ARP in packet and packet[ARP].op in (1,2):
         if not (packet.sprintf("%ARP.hwsrc%") in found_hosts) and not (packet.sprintf("%ARP.psrc%") in ignore) and not (packet.sprintf("%ARP.pdst%") in ignore):
             found_hosts[packet.sprintf("%ARP.hwsrc%")] = packet.sprintf("%ARP.psrc%")
-            return packet.sprintf("Found New %ARP.hwsrc% %ARP.psrc%")
+            return logger.green.fg(packet.sprintf("%ARP.hwsrc% - %ARP.psrc%"))
         else:
             if verbose:
-                print("Ignoring previously discovered host")
+                logger.yellow.fg("Ignoring previously discovered host")
 
 def determine_subnet_cidr(hosts):
     subnet_range = hosts[len(hosts) - 1] - hosts[0]
     final_host = ipaddress.IPv4Address(hosts[len(hosts) - 1])
-    if verbose:
-        print("Subnet range is %s " % subnet_range)
-        print("Determining subnets...")
-        print("The captured ip addresses range from %s to %s" % (ipaddress.IPv4Address(hosts[0]), final_host))
-        print("Based on a sample of %s captured ip addresses" % len(hosts))
+    
+    stats_banner()
+    
+    logger.green.bullet("Subnet range is %s " % logger.green_fg(subnet_range))
+    logger.yellow.bullet("Determining subnets...")
+    logger.green.bullet("The captured ip addresses range from %s to %s" % (logger.green_fg(ipaddress.IPv4Address(hosts[0])), logger.green_fg(final_host)))
+    logger.green.bullet("Based on a sample of %s captured ip addresses" % logger.green_fg(len(hosts)))
+
     # powers of 2 til we get to something
+
+    # spoopy stuff
     exponent = 0
     estimated_subnet_size = 1
     cidr = 32
@@ -55,13 +73,13 @@ def determine_subnet_cidr(hosts):
         else:
             chk = False
 
-    if verbose:
-        print("Estimated subnet size: /%s" % cidr)
+    logger.yellow.bullet("Estimated subnet size: /%s" % logger.yellow_fg(cidr))
+
     return cidr
 
 def get_potential_addresses(found_hosts, network):
     if verbose:
-        print("Getting potential addresses...")
+        logger.yellow.bullet("Getting potential addresses...")
     empty_slots = []
     # Roll through the network and identify the first x empty slots
     for address in ipaddress.IPv4Network(network):
@@ -71,31 +89,20 @@ def get_potential_addresses(found_hosts, network):
                     empty_slots.append(address)
         else:
             break
-    print("Try:")
+    logger.green.bullet("Try:")
     for address in empty_slots:
-        print("  %s" % address)
+        logger.green.bullet("  %s" % address)
 
-# determine which IP addresses have been discovered so far
+if os.geteuid() != 0:
+    logger.red.fg('sudo up motherfucker')
+    quit()
 
-# determine strings of consecutive IP addresses, with a set maximum gap
-# can i use some clever statistics shit here to find a likely empty spot
-# within a valid range?
+print('Listening for %s traffic' % logger.green_fg('ARP'))
+print()
 
-# suggest a top 10 most likely empty addresses, indicate a total number of
-# empty addresses within a likely range
-
-# have a prompt to "prod" addresses (loud mode) or just stay in 
-# caterpillar drive mode
-
-# So this previously was blocking as I wanted the constant updates
-# even though i'd seen the non-blocking
-# but the blocking fucks when you CTRL-C or otherwise quit
-# Turns out the docs hadn't updated either, cause you can totally
-# still call prn, so that's what we now do
 sniffo = AsyncSniffer(prn=arp_monitor_callback, filter="arp", store=0)
-try:
-    if verbose:
-        print("Starting listener...")
+
+try :
     sniffo.start()
     time.sleep(listen_time)
     if verbose:
@@ -104,27 +111,42 @@ try:
 except KeyboardInterrupt:
     print()
     if verbose:
-        print("Well fuck you too buddy")
+        logger.red.fg("Well fuck you too buddy")
     sniffo.stop()
-print()
+    quit()
+
 if len(found_hosts) == 0:
-    print("We ain't found shit")
+    logger.red.fg("We ain't found shit")
     exit()
 
 numeric_hosts=[]
+
 for host in found_hosts:
     numeric_hosts.append(int(ipaddress.IPv4Address(found_hosts[host])))
+
 numeric_hosts.sort()
+
 cidr = determine_subnet_cidr(numeric_hosts)
+
+# ipaddress compatible subnet string
 full_network_address = str(ipaddress.IPv4Address(numeric_hosts[0]))+"/"+str(cidr)
+
 network = ipaddress.ip_network(full_network_address, strict=False)
-if verbose:
-    print("The network is within a %s address range" % ("private" if network.is_private else "public"))
-print("Suspected subnet: %s" % network)
+
+logger.green.bullet("The network is within a %s address range" % (logger.green_fg("public") if network.is_private else logger.green_fg("private")))
+
+logger.green.bullet("Suspected subnet: %s" % network)
+
+logger.green.bullet("Network address: %s" % logger.green_fg(network.network_address))
+
+logger.green.bullet("Broadcast address: %s" % logger.green_fg((network.broadcast_address)))
+
+logger.green.bullet("The network range is %s address(es)" % logger.green_fg(str(2 ** (32 - cidr))))
+
 empty_addresses = ( 2 ** (32 - cidr) ) - len(found_hosts)
 
 if empty_addresses > 0:
-    print("There appear to be %s empty addresses out of a maximum %s" % (empty_addresses, str(2**(32-cidr))))
+    logger.yellow.bullet("There appear to be %s empty address(es)" % logger.yellow_fg(empty_addresses))
     get_potential_addresses(found_hosts, network)
 else:
     print("Sorry old boy, no spare addresses available")
