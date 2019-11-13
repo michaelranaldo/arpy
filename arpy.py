@@ -3,16 +3,13 @@ import time, ipaddress, argparse, os, sys
 from scapy.all import *
 from lib import logger
 
-'''
-might be worth adding switches for interfaces/verbosity/no colour etc?
-'''
-
 found_hosts={}
 ignore = ['0.0.0.0']
 
 parser = argparse.ArgumentParser(description = "ARP listener")
 parser.add_argument('-v', '--verbose', help='Verbose mode', action='count')
 parser.add_argument('-t', '--time', type=int, help='Time to listen for ARP packets')
+parser.add_argument('-I', '--interface', help='Set the listening interface. Defers to scapy if not set.', required=False)
 args = parser.parse_args()
 
 if args.verbose != None and int(args.verbose) > 0:
@@ -24,6 +21,8 @@ if args.time != None:
     listen_time = int(args.time)
     if verbose:
         print("Set listen time to %s" % listen_time)
+
+interface = args.interface
 
 def stats_banner():
     delimeter = ' ' * 10
@@ -100,9 +99,12 @@ if os.geteuid() != 0:
 print('Listening for %s traffic' % logger.green_fg('ARP'))
 print()
 
-sniffo = AsyncSniffer(prn=arp_monitor_callback, filter="arp", store=0)
+if interface == None:
+    sniffo = AsyncSniffer(prn=arp_monitor_callback, filter="arp", store=0)
+else:
+    sniffo = AsyncSniffer(prn=arp_monitor_callback, filter="arp", store=0, iface=interface)
 
-try :
+try:
     sniffo.start()
     time.sleep(listen_time)
     if verbose:
@@ -113,7 +115,9 @@ except KeyboardInterrupt:
     if verbose:
         logger.red.fg("Well fuck you too buddy")
     sniffo.stop()
-    quit()
+except Scapy_Exception:
+    logger.red.fg("Failed to attach filter")
+    logger.red.fg("Try attaching a filter with the -I flag")
 
 if len(found_hosts) == 0:
     logger.red.fg("We ain't found shit")
