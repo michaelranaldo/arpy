@@ -2,14 +2,19 @@
 import time, ipaddress, argparse, os, sys
 from scapy.all import *
 from lib import logger
+from scapy.error import Scapy_Exception
 
 found_hosts={}
 ignore = ['0.0.0.0']
+arp=True
+cdp=False
 
 parser = argparse.ArgumentParser(description = "ARP listener")
 parser.add_argument('-v', '--verbose', help='Verbose mode', action='count')
 parser.add_argument('-t', '--time', type=int, help='Time to listen for ARP packets')
 parser.add_argument('-I', '--interface', help='Set the listening interface. Defers to scapy if not set.', required=False)
+parser.add_argument('-a', '--arp', help='Set the arp listener', default=True, action='store_true')
+parser.add_argument('-c', '--cdp', help='Set the cdp listener', default=False, action='store_true')
 args = parser.parse_args()
 
 if args.verbose != None and int(args.verbose) > 0:
@@ -23,6 +28,24 @@ if args.time != None:
         print("Set listen time to %s" % listen_time)
 
 interface = args.interface
+print("Listening on %s" % interface)
+
+capture_filter = ""
+def add_protocol_to_filter(capture_filter, protocol):
+    if capture_filter == "":
+        capture_filter = capture_filter + protocol 
+    else:
+        capture_filter = capture_filter + " or " + protocol
+    return capture_filter
+
+if args.arp:
+    capture_filter = add_protocol_to_filter(capture_filter, "arp")
+    arp=True
+if args.cdp:
+    capture_filter = add_protocol_to_filter(capture_filter, "ether dst 01:00:0c:cc:cc:cc")
+    cdp=True
+
+print("Capture filter is currently set to %s" % capture_filter)
 
 def stats_banner():
     delimeter = ' ' * 10
@@ -33,7 +56,7 @@ def stats_banner():
     print(logger.red_fg(msg))
     print(corner+bar+ corner)
 
-def arp_monitor_callback(packet):
+def arp_mon(packet):
     if ARP in packet and packet[ARP].op in (1,2):
         if not (packet.sprintf("%ARP.hwsrc%") in found_hosts) and not (packet.sprintf("%ARP.psrc%") in ignore) and not (packet.sprintf("%ARP.pdst%") in ignore):
             found_hosts[packet.sprintf("%ARP.hwsrc%")] = packet.sprintf("%ARP.psrc%")
@@ -41,6 +64,17 @@ def arp_monitor_callback(packet):
         else:
             if verbose:
                 logger.yellow.fg("Ignoring previously discovered host")
+
+def cdp_mon(packet):
+    logger.yellow.bullet(".|..")
+
+
+def monitor_callback(packet):
+    if arp and ARP in packet:
+        arp_mon(packet)
+    if cdp and CDP in packet:
+        cdp_mon(packet)
+
 
 def determine_subnet_cidr(hosts):
     subnet_range = hosts[len(hosts) - 1] - hosts[0]
@@ -95,14 +129,17 @@ def get_potential_addresses(found_hosts, network):
 if os.geteuid() != 0:
     logger.red.fg('sudo up motherfucker')
     quit()
-
-print('Listening for %s traffic' % logger.green_fg('ARP'))
+    
+if arp:
+    print('Listening for %s traffic' % logger.green_fg('ARP'))
+if cdp:
+    print('Listening for %s traffic' % logger.green_fg('CDP'))
 print()
 
 if interface == None:
-    sniffo = AsyncSniffer(prn=arp_monitor_callback, filter="arp", store=0)
+    sniffo = AsyncSniffer(prn=monitor_callback, filter=capture_filter, store=0)
 else:
-    sniffo = AsyncSniffer(prn=arp_monitor_callback, filter="arp", store=0, iface=interface)
+    sniffo = AsyncSniffer(prn=monitor_callback, filter=capture_filter, store=0, iface=interface)
 
 try:
     sniffo.start()
@@ -118,6 +155,7 @@ except KeyboardInterrupt:
 except Scapy_Exception:
     logger.red.fg("Failed to attach filter")
     logger.red.fg("Try attaching a filter with the -I flag")
+    sniffo.stop()
 
 if len(found_hosts) == 0:
     logger.red.fg("We ain't found shit")
